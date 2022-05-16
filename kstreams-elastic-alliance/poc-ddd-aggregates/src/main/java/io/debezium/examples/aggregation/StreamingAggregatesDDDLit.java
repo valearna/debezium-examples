@@ -53,7 +53,7 @@ public class StreamingAggregatesDDDLit {
         final Serde<DefaultId> defaultIdSerde = SerdeFactory.createDbzEventJsonPojoSerdeFor(DefaultId.class,true);
         final Serde<Reference> referenceSerde = SerdeFactory.createDbzEventJsonPojoSerdeFor(Reference.class,false);
         final Serde<Author> authorSerde = SerdeFactory.createDbzEventJsonPojoSerdeFor(Author.class,false);
-	final Serde<LatestAuthor> latestAuthorSerde = SerdeFactory.createDbzEventJsonPojoSerdeFor(LatestAuthor.class,false);
+	    final Serde<LatestAuthor> latestAuthorSerde = SerdeFactory.createDbzEventJsonPojoSerdeFor(LatestAuthor.class,false);
         final Serde<Authors> authorsSerde = SerdeFactory.createDbzEventJsonPojoSerdeFor(Authors.class,false);
         final Serde<ReferenceAuthorAggregate> aggregateSerde =
                 SerdeFactory.createDbzEventJsonPojoSerdeFor(ReferenceAuthorAggregate.class,false);
@@ -68,7 +68,7 @@ public class StreamingAggregatesDDDLit {
         KStream<DefaultId, Author> authorStream = builder.stream(childrenTopic,
                 Consumed.with(defaultIdSerde, authorSerde));
 
-	//2a) pseudo-aggreate authors to keep latest relationship info
+	    //2a) pseudo-aggreate authors to keep latest relationship info
         KTable<DefaultId,LatestAuthor> tempTable = authorStream
                 .groupByKey(Serialized.with(defaultIdSerde, authorSerde))
                 .aggregate(
@@ -83,7 +83,7 @@ public class StreamingAggregatesDDDLit {
                                                 .withValueSerde(latestAuthorSerde)
                 );
 
-	//2b) aggregate authors per reference id
+	    //2b) aggregate authors per reference id
         KTable<DefaultId, Authors> authorTable = tempTable.toStream()
                 .map((authorId, latestAuthor) -> new KeyValue<>(latestAuthor.getReferenceId(),latestAuthor))
                 .groupByKey(Serialized.with(defaultIdSerde,latestAuthorSerde))
@@ -106,7 +106,7 @@ public class StreamingAggregatesDDDLit {
                             null : new ReferenceAuthorAggregate(reference,authors.getEntries())
                 );
 
-        dddAggregate.toStream().to("final_ddd_aggregates",
+        dddAggregate.toStream().to("references",
                                     Produced.with(defaultIdSerde,(Serde)aggregateSerde));
 
         dddAggregate.toStream().print(Printed.toSysOut());
