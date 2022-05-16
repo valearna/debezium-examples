@@ -31,3 +31,4 @@ generated-sources/
 
 oracle_instantclient/
 db2data/
+*.sql

@@ -1,0 +1,96 @@
+version: '2.1'
+services:
+  zookeeper:
+    image: quay.io/debezium/zookeeper:${DEBEZIUM_VERSION}
+    ports:
+     - 2181:2181
+     - 2888:2888
+     - 3888:3888
+    networks:
+      - my-network
+  kafka:
+    image: quay.io/debezium/kafka:${DEBEZIUM_VERSION}
+    ports:
+     - 9092:9092
+    environment:
+     - ZOOKEEPER_CONNECT=zookeeper:2181
+    networks:
+      - my-network
+  postgres:
+    #image: quay.io/debezium/example-postgres:${DEBEZIUM_VERSION}
+    image: postgres:13.1-alpine
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=literature
+    volumes:
+      - "./postgresql.conf:/etc/postgresql.conf"
+    #volumes:
+      #- ./inventory-addresses.sql:/docker-entrypoint-initdb.d/zzz.sql
+    networks:
+    - my-network
+    command:
+      postgres -c config_file=/etc/postgresql.conf
+  connector:
+    build:
+      context: .
+      dockerfile: docker/connector.dockerfile
+    ports:
+     - 8083:8083
+    environment:
+     - BOOTSTRAP_SERVERS=kafka:9092
+     - GROUP_ID=1
+     - CONFIG_STORAGE_TOPIC=my_source_connect_configs
+     - OFFSET_STORAGE_TOPIC=my_source_connect_offsets
+     - CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE=false
+     - CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE=false
+    networks:
+      - my-network
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.10.1
+    hostname: elasticsearch
+    restart: always
+    environment:
+      - node.name=es1
+      - cluster.name=es-docker-cluster
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    networks:
+      - my-network
+  aggregator:
+    restart: always
+    image: debezium/kstreams-aggregator:${DEBEZIUM_VERSION}
+    build:
+      context: poc-ddd-aggregates
+    environment:
+     - JAVA_MAIN_CLASS=io.debezium.examples.aggregation.StreamingAggregatesDDDLit
+     - PARENT_TOPIC=dbserver1.public.references
+     - CHILDREN_TOPIC=dbserver1.public.authors
+     - BOOTSTRAP_SERVERS=kafka:9092
+    depends_on:
+     - connector
+    networks:
+      - my-network
+    command: >
+      /bin/bash -c "
+        while ! curl -f -s -X GET http://connector:8083/connectors/postgres-source;
+        do
+          echo 'Waiting for source connector to be deployed';
+          sleep 1;
+        done;
+        echo 'Source connector deployed!';
+        /opt/poc-ddd-aggregates/run-aggregator.sh
+      "
+networks:
+  my-network:
+    name: kstreams-dbz
